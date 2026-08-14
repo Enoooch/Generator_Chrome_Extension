@@ -1,9 +1,13 @@
 {
   "manifest_version": 3,
   "name": "密码生成器",
-  "version": "0.1.0",
-  "description": "本地生成高强度随机密码，不联网、不存储、不上传。",
-  "permissions": ["storage"],
+  "version": "0.2.0",
+  "description": "本地生成高强度随机密码、易记词组和 PIN，不联网、不存储、不上传。",
+  "permissions": ["storage", "contextMenus", "activeTab", "scripting"],
+  "background": {
+    "service_worker": "assets/background.js",
+    "type": "module"
+  },
   "action": {
     "default_popup": "popup.html",
     "default_title": "密码生成器",

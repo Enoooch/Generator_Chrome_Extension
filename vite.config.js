@@ -9,7 +9,7 @@ export default defineConfig({
     // 扩展页面禁止内联脚本，且不需要按需加载，全部打成单文件更好排查
     cssCodeSplit: false,
     rollupOptions: {
-      input: { popup: 'popup.html' },
+      input: { popup: 'popup.html', background: 'src/background.js' },
       output: {
         entryFileNames: 'assets/[name].js',
         chunkFileNames: 'assets/[name].js',

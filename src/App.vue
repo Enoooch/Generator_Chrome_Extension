@@ -113,143 +113,145 @@ watch(state, () => {
       </button>
     </nav>
 
-    <div class="output">
-      <p v-if="error" class="error">{{ error }}</p>
-      <!-- 镜像层负责着色和撑开高度，透明 textarea 覆在上面负责编辑 -->
-      <div v-else class="editor">
-        <pre class="mirror" aria-hidden="true"><span
-          v-for="(s, i) in segments" :key="i" :class="s.type">{{ s.c }}</span></pre>
-        <textarea
-          :value="password"
-          spellcheck="false"
-          autocomplete="off"
-          autocapitalize="off"
-          autocorrect="off"
-          aria-label="密码，可直接编辑"
-          @input="onInput"
-        />
+    <div class="scroll">
+      <div class="output">
+        <p v-if="error" class="error">{{ error }}</p>
+        <!-- 镜像层负责着色和撑开高度，透明 textarea 覆在上面负责编辑 -->
+        <div v-else class="editor">
+          <pre class="mirror" aria-hidden="true"><span
+            v-for="(s, i) in segments" :key="i" :class="s.type">{{ s.c }}</span></pre>
+          <textarea
+            :value="password"
+            spellcheck="false"
+            autocomplete="off"
+            autocapitalize="off"
+            autocorrect="off"
+            aria-label="密码，可直接编辑"
+            @input="onInput"
+          />
+        </div>
+
+        <div class="actions">
+          <button class="icon" title="重新生成" aria-label="重新生成" @click="refresh">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12a9 9 0 1 1-3-6.7" /><polyline points="21 3 21 9 15 9" />
+            </svg>
+          </button>
+          <button class="copy" :disabled="!password" @click="copy()">
+            {{ copied ? '已复制' : '复制' }}
+          </button>
+        </div>
       </div>
 
-      <div class="actions">
-        <button class="icon" title="重新生成" aria-label="重新生成" @click="refresh">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 12a9 9 0 1 1-3-6.7" /><polyline points="21 3 21 9 15 9" />
-          </svg>
-        </button>
-        <button class="copy" :disabled="!password" @click="copy()">
-          {{ copied ? '已复制' : '复制' }}
-        </button>
+      <div class="meter">
+        <div class="track">
+          <div class="fill" :style="{ width: strength.percent + '%', background: strength.color }" />
+        </div>
+        <span class="meter-label" :style="{ color: strength.color }">{{ strength.label }}</span>
+        <span
+          class="bits"
+          :title="strength.exact
+            ? '由密码学随机数均匀生成，此为精确熵值'
+            : '手工编辑后只能按字符构成估算，这是上限；人工挑选的密码实际强度通常远低于此'"
+        >{{ strength.exact ? '' : '≤' }}{{ strength.bits }} bits<template v-if="!strength.exact"> · 估算</template></span>
       </div>
-    </div>
 
-    <div class="meter">
-      <div class="track">
-        <div class="fill" :style="{ width: strength.percent + '%', background: strength.color }" />
-      </div>
-      <span class="meter-label" :style="{ color: strength.color }">{{ strength.label }}</span>
-      <span
-        class="bits"
-        :title="strength.exact
-          ? '由密码学随机数均匀生成，此为精确熵值'
-          : '手工编辑后只能按字符构成估算，这是上限；人工挑选的密码实际强度通常远低于此'"
-      >{{ strength.exact ? '' : '≤' }}{{ strength.bits }} bits<template v-if="!strength.exact"> · 估算</template></span>
-    </div>
-
-    <section v-if="state.mode === 'random'">
-      <label class="row">
-        <span>长度</span>
-        <output>{{ state.random.length }}</output>
-      </label>
-      <input v-model.number="state.random.length" type="range" min="4" max="64" />
-
-      <div class="types">
-        <label v-for="t in TYPES" :key="t.key" class="chip" :class="{ on: state.random[t.key] }">
-          <input v-model="state.random[t.key]" type="checkbox" />
-          <span>{{ t.label }}</span>
+      <section v-if="state.mode === 'random'">
+        <label class="row">
+          <span>长度</span>
+          <output>{{ state.random.length }}</output>
         </label>
-      </div>
+        <input v-model.number="state.random.length" type="range" min="4" max="64" />
 
-      <label class="row toggle">
-        <input v-model="state.random.excludeAmbiguous" type="checkbox" />
-        <span>排除易混淆字符 <em>O0oIl1|</em></span>
-      </label>
+        <div class="types">
+          <label v-for="t in TYPES" :key="t.key" class="chip" :class="{ on: state.random[t.key] }">
+            <input v-model="state.random[t.key]" type="checkbox" />
+            <span>{{ t.label }}</span>
+          </label>
+        </div>
 
-      <label class="row toggle">
-        <input v-model="state.random.noRepeat" type="checkbox" />
-        <span>字符不重复</span>
-      </label>
+        <label class="row toggle">
+          <input v-model="state.random.excludeAmbiguous" type="checkbox" />
+          <span>排除易混淆字符 <em>O0oIl1|</em></span>
+        </label>
 
-      <label class="row stack">
-        <span class="dim">排除指定字符</span>
-        <input v-model="state.random.customExclude" type="text" placeholder="例如 &lt;&gt;&amp;" spellcheck="false" autocomplete="off" />
-      </label>
-    </section>
+        <label class="row toggle">
+          <input v-model="state.random.noRepeat" type="checkbox" />
+          <span>字符不重复</span>
+        </label>
 
-    <section v-else-if="state.mode === 'phrase'">
-      <label class="row">
-        <span>词数</span>
-        <output>{{ state.phrase.words }}</output>
-      </label>
-      <input v-model.number="state.phrase.words" type="range" :min="MIN_WORDS" :max="MAX_WORDS" />
+        <label class="row stack">
+          <span class="dim">排除指定字符</span>
+          <input v-model="state.random.customExclude" type="text" placeholder="例如 &lt;&gt;&amp;" spellcheck="false" autocomplete="off" />
+        </label>
+      </section>
 
-      <label class="row">
-        <span>分隔符</span>
-        <span class="seps">
+      <section v-else-if="state.mode === 'phrase'">
+        <label class="row">
+          <span>词数</span>
+          <output>{{ state.phrase.words }}</output>
+        </label>
+        <input v-model.number="state.phrase.words" type="range" :min="MIN_WORDS" :max="MAX_WORDS" />
+
+        <label class="row">
+          <span>分隔符</span>
+          <span class="seps">
+            <button
+              v-for="s in SEPARATORS"
+              :key="s.value"
+              class="sep"
+              :class="{ on: state.phrase.separator === s.value }"
+              @click="state.phrase.separator = s.value"
+            >{{ s.label }}</button>
+          </span>
+        </label>
+
+        <label class="row toggle">
+          <input v-model="state.phrase.capitalize" type="checkbox" />
+          <span>首字母大写</span>
+        </label>
+
+        <label class="row toggle">
+          <input v-model="state.phrase.addNumber" type="checkbox" />
+          <span>末尾追加一位数字</span>
+        </label>
+
+        <p class="hint">词库 {{ WORDLIST_SIZE }} 词，每词约 10.3 bits。分隔符与大小写不增加强度。</p>
+      </section>
+
+      <section v-else>
+        <label class="row">
+          <span>位数</span>
+          <output>{{ state.pin.length }}</output>
+        </label>
+        <input v-model.number="state.pin.length" type="range" min="3" max="12" />
+        <div class="presets">
           <button
-            v-for="s in SEPARATORS"
-            :key="s.value"
+            v-for="n in PIN_PRESETS"
+            :key="n"
             class="sep"
-            :class="{ on: state.phrase.separator === s.value }"
-            @click="state.phrase.separator = s.value"
-          >{{ s.label }}</button>
-        </span>
-      </label>
+            :class="{ on: state.pin.length === n }"
+            @click="state.pin.length = n"
+          >{{ n }} 位</button>
+        </div>
+        <p class="hint">纯数字强度很低，仅适合有锁定次数限制的场景（手机、门禁）。</p>
+      </section>
 
-      <label class="row toggle">
-        <input v-model="state.phrase.capitalize" type="checkbox" />
-        <span>首字母大写</span>
-      </label>
-
-      <label class="row toggle">
-        <input v-model="state.phrase.addNumber" type="checkbox" />
-        <span>末尾追加一位数字</span>
-      </label>
-
-      <p class="hint">词库 {{ WORDLIST_SIZE }} 词，每词约 10.3 bits。分隔符与大小写不增加强度。</p>
-    </section>
-
-    <section v-else>
-      <label class="row">
-        <span>位数</span>
-        <output>{{ state.pin.length }}</output>
-      </label>
-      <input v-model.number="state.pin.length" type="range" min="3" max="12" />
-      <div class="presets">
-        <button
-          v-for="n in PIN_PRESETS"
-          :key="n"
-          class="sep"
-          :class="{ on: state.pin.length === n }"
-          @click="state.pin.length = n"
-        >{{ n }} 位</button>
+      <div class="bar">
+        <button class="link" @click="resetCurrentMode">恢复默认</button>
+        <button class="link" :disabled="!history.length" @click="showHistory = !showHistory">
+          历史 {{ history.length ? `(${history.length})` : '' }}
+        </button>
       </div>
-      <p class="hint">纯数字强度很低，仅适合有锁定次数限制的场景（手机、门禁）。</p>
-    </section>
 
-    <div class="bar">
-      <button class="link" @click="resetCurrentMode">恢复默认</button>
-      <button class="link" :disabled="!history.length" @click="showHistory = !showHistory">
-        历史 {{ history.length ? `(${history.length})` : '' }}
-      </button>
+      <ul v-if="showHistory && history.length" class="history">
+        <li v-for="v in history" :key="v">
+          <code>{{ v }}</code>
+          <button title="复制" aria-label="复制这条" @click="copy(v)">复制</button>
+        </li>
+        <li class="clear"><button class="link" @click="history = []">清空历史</button></li>
+      </ul>
     </div>
-
-    <ul v-if="showHistory && history.length" class="history">
-      <li v-for="v in history" :key="v">
-        <code>{{ v }}</code>
-        <button title="复制" aria-label="复制这条" @click="copy(v)">复制</button>
-      </li>
-      <li class="clear"><button class="link" @click="history = []">清空历史</button></li>
-    </ul>
 
     <footer>本地生成 · 不联网 · 不保存密码</footer>
   </main>
@@ -257,6 +259,17 @@ watch(state, () => {
 
 <style scoped>
 main {
+  display: flex;
+  flex-direction: column;
+  max-height: 600px;
+}
+
+/* 滚动条必须落在这里而不是文档上，否则弹窗会被 Chrome 横向拉宽 */
+.scroll {
+  flex: 1 1 auto;
+  min-height: 0; /* 缺了它 flex 项不肯收缩，滚动条又会跑回文档上 */
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -265,6 +278,8 @@ main {
 
 /* ---- 模式切换 ---- */
 .tabs {
+  flex: none;
+  margin: 12px 12px 0;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 2px;
@@ -529,16 +544,15 @@ input[type='text']:focus {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 168px;
-  overflow-y: auto;
 }
 .history li {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
 }
 .history code {
-  flex: 1;
+  flex: 1 1 0;
   min-width: 0;
   padding: 4px 6px;
   border-radius: 6px;
@@ -551,6 +565,7 @@ input[type='text']:focus {
   text-overflow: ellipsis;
 }
 .history li button {
+  flex: none;
   padding: 3px 7px;
   font-size: 11px;
 }
@@ -560,6 +575,9 @@ input[type='text']:focus {
 }
 
 footer {
+  flex: none;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
   color: var(--text-dim);
   font-size: 11px;
   text-align: center;

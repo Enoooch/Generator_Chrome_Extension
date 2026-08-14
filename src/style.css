@@ -30,9 +30,27 @@
   box-sizing: border-box;
 }
 
+/*
+ * popup 尺寸约束 —— 每一条都在修一个具体的显示 bug，别随手删。
+ *
+ * 症状：历史记录展开后，整个弹窗被横向拉宽，右侧出现大片空白。
+ * 成因：body 是固定的 340px。内容一旦超过 Chrome 给 popup 的 600px 高度上限，文档就会
+ *      出现纵向滚动条，可用视口被压到约 325px，固定 340px 的 body 于是横向溢出，
+ *      Chrome 重新测量后把弹窗往宽了拉（最宽能到 800px），而 body 仍是 340px，
+ *      多出来的宽度就是那片空白。
+ * 修法：让**文档本身永不滚动**。高度上限交给 body，滚动交给内部的 .scroll 容器，
+ *      纵向滚动条落在内层，Chrome 就不会再去重算弹窗宽度。
+ */
+html {
+  width: 340px;
+  overflow: hidden;
+}
+
 body {
   margin: 0;
   width: 340px;
+  max-height: 600px;
+  overflow: hidden;
   background: var(--bg);
   color: var(--text);
   font: 13px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',

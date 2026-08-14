@@ -1,91 +1,88 @@
 <script setup>
 import { computed, reactive, ref, watch, onMounted } from 'vue'
-import { DEFAULTS, MODES, PIN_PRESETS, generate, withDefaults, GenerateError } from './lib/state.js'
-import { SEPARATORS, MIN_WORDS, MAX_WORDS, WORDLIST_SIZE } from './lib/passphrase.js'
+import { DEFAULTS, TOOLS, generate, withDefaults, GenerateError } from './lib/state.js'
 import { estimate, estimateFromString } from './lib/strength.js'
+import { describeUsername } from './lib/username.js'
 import { loadOptions, saveOptions } from './lib/storage.js'
+import OutputField from './components/OutputField.vue'
+import PasswordOptions from './components/PasswordOptions.vue'
+import UsernameOptions from './components/UsernameOptions.vue'
 
-const MAX_MANUAL_LEN = 512
 const HISTORY_LIMIT = 10
 
 const state = reactive(withDefaults(null))
-const password = ref('')
-const edited = ref(false) // 手工改过，强度只能估算
+const value = ref('')
+const edited = ref(false) // 手工改过，密码强度只能估算
 const error = ref('')
 const copied = ref(false)
-const history = ref([]) // 仅存内存，popup 关闭即消失
 const showHistory = ref(false)
 const ready = ref(false)
 
-const TYPES = [
-  { key: 'upper', label: 'A-Z' },
-  { key: 'lower', label: 'a-z' },
-  { key: 'digit', label: '0-9' },
-  { key: 'symbol', label: '!@#$' },
-]
+// 两个工具各自一份历史，切 tab 时不会看到另一边的内容，避免误复制
+const history = reactive({ password: [], username: [] })
+const currentHistory = computed(() => history[state.tool])
+
+const isPassword = computed(() => state.tool === 'password')
 
 const strength = computed(() =>
-  edited.value ? estimateFromString(password.value) : estimate(state.password)
+  edited.value ? estimateFromString(value.value) : estimate(state.password)
 )
-
-// 按字符类别着色。textarea 无法上色，所以下面用一层等宽镜像 <pre> 承载颜色。
-const segments = computed(() =>
-  [...password.value].map((c) => ({
-    c,
-    type: /\d/.test(c) ? 'digit' : /[a-zA-Z]/.test(c) ? 'letter' : 'symbol',
-  }))
-)
+const nameInfo = computed(() => describeUsername(value.value))
 
 function regenerate() {
   try {
-    password.value = generate(state)
+    value.value = generate(state)
     error.value = ''
   } catch (e) {
     if (!(e instanceof GenerateError)) throw e
-    password.value = ''
+    value.value = ''
     error.value = e.message
   }
   edited.value = false
   copied.value = false
 }
 
-function remember(value) {
-  if (!value || history.value[0] === value) return
-  history.value = [value, ...history.value.filter((v) => v !== value)].slice(0, HISTORY_LIMIT)
+function remember(v) {
+  if (!v) return
+  const list = history[state.tool]
+  history[state.tool] = [v, ...list.filter((x) => x !== v)].slice(0, HISTORY_LIMIT)
 }
 
-/** 手动刷新：把即将被覆盖的那条存进历史，避免手滑点掉刚生成的好密码 */
+/** 手动刷新：把即将被覆盖的那条存进历史，避免手滑点掉刚生成的好结果 */
 function refresh() {
-  remember(password.value)
+  remember(value.value)
   regenerate()
 }
 
-function onInput(e) {
-  // 换行在密码里没有意义，粘贴多行时直接抹平
-  password.value = e.target.value.replace(/[\r\n]+/g, '').slice(0, MAX_MANUAL_LEN)
+function onEdit(v) {
+  value.value = v
   edited.value = true
   copied.value = false
   error.value = ''
 }
 
 let copyTimer
-async function copy(value = password.value) {
-  if (!value) return
+async function copy(v = value.value) {
+  if (!v) return
   try {
-    await navigator.clipboard.writeText(value)
-    remember(value)
+    await navigator.clipboard.writeText(v)
+    remember(v)
     copied.value = true
     clearTimeout(copyTimer)
     copyTimer = setTimeout(() => (copied.value = false), 1500)
   } catch {
-    error.value = '复制失败，请手动选中密码'
+    error.value = '复制失败，请手动选中'
   }
 }
 
-/** 只重置当前模式的参数，不动其他模式，也不动已生成的密码 */
-function resetCurrentMode() {
-  const mode = state.password.mode
-  Object.assign(state.password[mode], DEFAULTS.password[mode])
+/** 只重置当前工具（密码则只重置当前模式）的参数，不动其他部分，也不动已生成的结果 */
+function resetCurrent() {
+  if (isPassword.value) {
+    const mode = state.password.mode
+    Object.assign(state.password[mode], DEFAULTS.password[mode])
+  } else {
+    Object.assign(state.username, DEFAULTS.username)
+  }
 }
 
 onMounted(async () => {
@@ -99,38 +96,33 @@ watch(state, () => {
   regenerate()
   saveOptions(JSON.parse(JSON.stringify(state)))
 })
+
+// 切换工具时收起历史面板，否则会先闪一下另一个工具的列表
+watch(() => state.tool, () => (showHistory.value = false))
 </script>
 
 <template>
   <main>
-    <nav class="tabs">
+    <nav class="tools">
       <button
-        v-for="m in MODES"
-        :key="m.key"
-        :class="{ on: state.password.mode === m.key }"
-        @click="state.password.mode = m.key"
+        v-for="t in TOOLS"
+        :key="t.key"
+        :class="{ on: state.tool === t.key }"
+        @click="state.tool = t.key"
       >
-        {{ m.label }}
+        {{ t.label }}
       </button>
     </nav>
 
     <div class="scroll">
       <div class="output">
         <p v-if="error" class="error">{{ error }}</p>
-        <!-- 镜像层负责着色和撑开高度，透明 textarea 覆在上面负责编辑 -->
-        <div v-else class="editor">
-          <pre class="mirror" aria-hidden="true"><span
-            v-for="(s, i) in segments" :key="i" :class="s.type">{{ s.c }}</span></pre>
-          <textarea
-            :value="password"
-            spellcheck="false"
-            autocomplete="off"
-            autocapitalize="off"
-            autocorrect="off"
-            aria-label="密码，可直接编辑"
-            @input="onInput"
-          />
-        </div>
+        <OutputField
+          v-else
+          :model-value="value"
+          :label="isPassword ? '密码，可直接编辑' : '用户名，可直接编辑'"
+          @update:model-value="onEdit"
+        />
 
         <div class="actions">
           <button class="icon" title="重新生成" aria-label="重新生成" @click="refresh">
@@ -138,13 +130,14 @@ watch(state, () => {
               <path d="M21 12a9 9 0 1 1-3-6.7" /><polyline points="21 3 21 9 15 9" />
             </svg>
           </button>
-          <button class="copy" :disabled="!password" @click="copy()">
+          <button class="copy" :disabled="!value" @click="copy()">
             {{ copied ? '已复制' : '复制' }}
           </button>
         </div>
       </div>
 
-      <div class="meter">
+      <!-- 密码看强度；用户名是公开的，熵没有意义，改看长度和站点兼容性 -->
+      <div v-if="isPassword" class="meter">
         <div class="track">
           <div class="fill" :style="{ width: strength.percent + '%', background: strength.color }" />
         </div>
@@ -156,116 +149,46 @@ watch(state, () => {
             : '手工编辑后只能按字符构成估算，这是上限；人工挑选的密码实际强度通常远低于此'"
         >{{ strength.exact ? '' : '≤' }}{{ strength.bits }} bits<template v-if="!strength.exact"> · 估算</template></span>
       </div>
+      <div v-else class="meter">
+        <span class="dim">{{ nameInfo.length }} 字符</span>
+        <span v-if="nameInfo.notes.length" class="notes">{{ nameInfo.notes.join('；') }}</span>
+        <span v-else class="ok">兼容性良好</span>
+      </div>
 
-      <section v-if="state.password.mode === 'random'">
-        <label class="row">
-          <span>长度</span>
-          <output>{{ state.password.random.length }}</output>
-        </label>
-        <input v-model.number="state.password.random.length" type="range" min="4" max="64" />
-
-        <div class="types">
-          <label v-for="t in TYPES" :key="t.key" class="chip" :class="{ on: state.password.random[t.key] }">
-            <input v-model="state.password.random[t.key]" type="checkbox" />
-            <span>{{ t.label }}</span>
-          </label>
-        </div>
-
-        <label class="row toggle">
-          <input v-model="state.password.random.excludeAmbiguous" type="checkbox" />
-          <span>排除易混淆字符 <em>O0oIl1|</em></span>
-        </label>
-
-        <label class="row toggle">
-          <input v-model="state.password.random.noRepeat" type="checkbox" />
-          <span>字符不重复</span>
-        </label>
-
-        <label class="row stack">
-          <span class="dim">排除指定字符</span>
-          <input v-model="state.password.random.customExclude" type="text" placeholder="例如 &lt;&gt;&amp;" spellcheck="false" autocomplete="off" />
-        </label>
-      </section>
-
-      <section v-else-if="state.password.mode === 'phrase'">
-        <label class="row">
-          <span>词数</span>
-          <output>{{ state.password.phrase.words }}</output>
-        </label>
-        <input v-model.number="state.password.phrase.words" type="range" :min="MIN_WORDS" :max="MAX_WORDS" />
-
-        <label class="row">
-          <span>分隔符</span>
-          <span class="seps">
-            <button
-              v-for="s in SEPARATORS"
-              :key="s.value"
-              class="sep"
-              :class="{ on: state.password.phrase.separator === s.value }"
-              @click="state.password.phrase.separator = s.value"
-            >{{ s.label }}</button>
-          </span>
-        </label>
-
-        <label class="row toggle">
-          <input v-model="state.password.phrase.capitalize" type="checkbox" />
-          <span>首字母大写</span>
-        </label>
-
-        <label class="row toggle">
-          <input v-model="state.password.phrase.addNumber" type="checkbox" />
-          <span>末尾追加一位数字</span>
-        </label>
-
-        <p class="hint">词库 {{ WORDLIST_SIZE }} 词，每词约 10.3 bits。分隔符与大小写不增加强度。</p>
-      </section>
-
-      <section v-else>
-        <label class="row">
-          <span>位数</span>
-          <output>{{ state.password.pin.length }}</output>
-        </label>
-        <input v-model.number="state.password.pin.length" type="range" min="3" max="12" />
-        <div class="presets">
-          <button
-            v-for="n in PIN_PRESETS"
-            :key="n"
-            class="sep"
-            :class="{ on: state.password.pin.length === n }"
-            @click="state.password.pin.length = n"
-          >{{ n }} 位</button>
-        </div>
-        <p class="hint">纯数字强度很低，仅适合有锁定次数限制的场景（手机、门禁）。</p>
-      </section>
+      <PasswordOptions v-if="isPassword" :password="state.password" />
+      <UsernameOptions v-else :username="state.username" />
 
       <div class="bar">
-        <button class="link" @click="resetCurrentMode">恢复默认</button>
-        <button class="link" :disabled="!history.length" @click="showHistory = !showHistory">
-          历史 {{ history.length ? `(${history.length})` : '' }}
+        <button class="link" @click="resetCurrent">恢复默认</button>
+        <button class="link" :disabled="!currentHistory.length" @click="showHistory = !showHistory">
+          历史 {{ currentHistory.length ? `(${currentHistory.length})` : '' }}
         </button>
       </div>
 
-      <ul v-if="showHistory && history.length" class="history">
-        <li v-for="v in history" :key="v">
+      <ul v-if="showHistory && currentHistory.length" class="history">
+        <li v-for="v in currentHistory" :key="v">
           <code>{{ v }}</code>
           <button title="复制" aria-label="复制这条" @click="copy(v)">复制</button>
         </li>
-        <li class="clear"><button class="link" @click="history = []">清空历史</button></li>
+        <li class="clear"><button class="link" @click="history[state.tool] = []">清空历史</button></li>
       </ul>
     </div>
 
-    <footer>本地生成 · 不联网 · 不保存密码</footer>
+    <footer>本地生成 · 不联网 · 不保存结果</footer>
   </main>
 </template>
 
 <style scoped>
+/*
+ * 固定的头尾 + 中间滚动区。滚动条必须落在 .scroll 上而不是文档上，
+ * 否则弹窗会被 Chrome 横向拉宽 —— 详见 style.css 里那段注释。
+ */
 main {
   display: flex;
   flex-direction: column;
   max-height: 600px;
 }
 
-/* 滚动条必须落在这里而不是文档上，否则弹窗会被 Chrome 横向拉宽 */
 .scroll {
   flex: 1 1 auto;
   min-height: 0; /* 缺了它 flex 项不肯收缩，滚动条又会跑回文档上 */
@@ -277,34 +200,35 @@ main {
   gap: 12px;
 }
 
-/* ---- 模式切换 ---- */
-.tabs {
+/* ---- 顶层工具切换 ---- */
+.tools {
   flex: none;
-  margin: 12px 12px 0;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 2px;
+  margin: 12px 12px 0;
   padding: 2px;
   background: var(--bg-soft);
   border-radius: 8px;
 }
-.tabs button {
+.tools button {
   border: none;
   background: transparent;
   border-radius: 6px;
-  padding: 5px 0;
+  padding: 6px 0;
   color: var(--text-dim);
   transition: background 0.15s, color 0.15s;
 }
-.tabs button.on {
+.tools button.on {
   background: var(--bg);
   color: var(--text);
   font-weight: 600;
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
 }
 
-/* ---- 密码框 ---- */
+/* ---- 结果区 ---- */
 .output {
+  flex: none;
   background: var(--bg-soft);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -312,47 +236,6 @@ main {
   display: flex;
   flex-direction: column;
   gap: 10px;
-}
-
-.editor {
-  position: relative;
-  min-height: 42px;
-}
-/* 镜像层与 textarea 的排版属性必须逐条一致，否则光标会和字符错位 */
-.mirror,
-.editor textarea {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 15px;
-  line-height: 1.45;
-  letter-spacing: 0.02em;
-  white-space: pre-wrap;
-  word-break: break-all;
-  overflow-wrap: break-word;
-}
-.mirror {
-  min-height: 42px;
-  color: var(--text);
-}
-.mirror .digit { color: #0ea5e9; }
-.mirror .symbol { color: #f43f5e; }
-
-.editor textarea {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  resize: none;
-  overflow: hidden;
-  background: transparent;
-  color: transparent; /* 字形由下面的镜像层显示 */
-  caret-color: var(--text);
-  outline: none;
-}
-.editor textarea::selection {
-  background: color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 .error {
@@ -366,17 +249,6 @@ main {
   display: flex;
   gap: 8px;
 }
-
-button {
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--bg);
-  padding: 6px 10px;
-  transition: filter 0.15s, opacity 0.15s;
-}
-button:hover:not(:disabled) { filter: brightness(0.96); }
-button:disabled { opacity: 0.45; cursor: default; }
-
 .icon {
   display: grid;
   place-items: center;
@@ -391,11 +263,13 @@ button:disabled { opacity: 0.45; cursor: default; }
   font-weight: 600;
 }
 
-/* ---- 强度 ---- */
+/* ---- 强度 / 兼容性 ---- */
 .meter {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
+  min-height: 18px;
 }
 .track {
   flex: 1;
@@ -409,136 +283,38 @@ button:disabled { opacity: 0.45; cursor: default; }
   border-radius: 2px;
   transition: width 0.2s, background 0.2s;
 }
-.meter-label { font-weight: 600; }
+.meter-label {
+  font-weight: 600;
+}
 .bits {
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
   cursor: help;
 }
-
-/* ---- 参数区 ---- */
-section {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.row.toggle {
-  justify-content: flex-start;
-  cursor: pointer;
-}
-.row.stack {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 5px;
-}
-.row em {
-  font-style: normal;
-  font-family: ui-monospace, Menlo, monospace;
-  color: var(--text-dim);
-}
-.dim { color: var(--text-dim); }
-.hint {
-  margin: 0;
-  color: var(--text-dim);
+.notes {
+  flex: 1;
+  min-width: 0;
+  color: #f59e0b;
   font-size: 11px;
-  line-height: 1.4;
+  line-height: 1.3;
 }
-output {
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-}
-input[type='range'] {
-  width: 100%;
-  margin: 0;
-}
-input[type='text'] {
-  width: 100%;
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--bg-inset);
-  color: var(--text);
-  font: inherit;
-  font-family: ui-monospace, Menlo, monospace;
-}
-input[type='text']:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: -1px;
-}
-
-.types {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
-}
-.chip {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 5px 2px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--bg-inset);
-  font-family: ui-monospace, Menlo, monospace;
-  font-size: 12px;
-  color: var(--text-dim);
-  cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
-}
-.chip.on {
-  border-color: var(--accent);
-  color: var(--text);
-}
-.chip input {
-  margin: 0;
-  width: 12px;
-  height: 12px;
-}
-
-.seps, .presets {
-  display: flex;
-  gap: 4px;
-}
-.sep {
-  min-width: 30px;
-  padding: 3px 7px;
-  font-size: 12px;
-  background: var(--bg-inset);
-  color: var(--text-dim);
-}
-.sep.on {
-  border-color: var(--accent);
-  color: var(--text);
-  font-weight: 600;
+.ok {
+  flex: 1;
+  color: #22c55e;
+  font-size: 11px;
 }
 
 /* ---- 底部 ---- */
 .bar {
+  flex: none;
   display: flex;
   justify-content: space-between;
   border-top: 1px solid var(--border);
   padding-top: 8px;
 }
-.link {
-  border: none;
-  background: none;
-  padding: 0;
-  color: var(--text-dim);
-  font-size: 12px;
-}
-.link:hover:not(:disabled) {
-  color: var(--accent);
-  filter: none;
-}
 
 .history {
+  flex: none;
   list-style: none;
   margin: 0;
   padding: 0;

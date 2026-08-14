@@ -31,13 +31,12 @@
 }
 
 /*
- * popup 尺寸约束 —— 每一条都在修一个具体的显示 bug，别随手删。
+ * popup 尺寸约束 —— 这里的每一条都是在修一个具体的显示 bug，别随手删。
  *
  * 症状：历史记录展开后，整个弹窗被横向拉宽，右侧出现大片空白。
  * 成因：body 是固定的 340px。内容一旦超过 Chrome 给 popup 的 600px 高度上限，文档就会
  *      出现纵向滚动条，可用视口被压到约 325px，固定 340px 的 body 于是横向溢出，
- *      Chrome 重新测量后把弹窗往宽了拉（最宽能到 800px），而 body 仍是 340px，
- *      多出来的宽度就是那片空白。
+ *      Chrome 重新测量后把弹窗往宽了拉（最宽能到 800px），而 body 仍是 340px。
  * 修法：让**文档本身永不滚动**。高度上限交给 body，滚动交给内部的 .scroll 容器，
  *      纵向滚动条落在内层，Chrome 就不会再去重算弹窗宽度。
  */
@@ -58,14 +57,149 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ---- 控件基元：两个工具面板共用，所以放在全局而不是某个组件的 scoped 里 ---- */
+
 button {
   font: inherit;
   color: inherit;
   cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  padding: 6px 10px;
+  transition: filter 0.15s, opacity 0.15s;
+}
+button:hover:not(:disabled) {
+  filter: brightness(0.96);
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.link:hover:not(:disabled) {
+  color: var(--accent);
+  filter: none;
 }
 
 input[type='checkbox'],
 input[type='range'] {
   accent-color: var(--accent);
   cursor: pointer;
+}
+
+input[type='range'] {
+  width: 100%;
+  margin: 0;
+}
+
+input[type='text'] {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-inset);
+  color: var(--text);
+  font: inherit;
+  font-family: ui-monospace, Menlo, monospace;
+}
+input[type='text']:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+output {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* 一组参数控件的竖排容器 */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.row.toggle {
+  justify-content: flex-start;
+  cursor: pointer;
+}
+.row.stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+}
+.row em {
+  font-style: normal;
+  font-family: ui-monospace, Menlo, monospace;
+  color: var(--text-dim);
+}
+
+.dim {
+  color: var(--text-dim);
+}
+
+.hint {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+/* 勾选式方块，用于字符类型 */
+.chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 5px 2px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-inset);
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.chip.on {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.chip input {
+  margin: 0;
+  width: 12px;
+  height: 12px;
+}
+
+/* 单选式小按钮，用于分隔符、大小写、长度预设 */
+.seg {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.seg button {
+  min-width: 30px;
+  padding: 3px 7px;
+  font-size: 12px;
+  background: var(--bg-inset);
+  color: var(--text-dim);
+}
+.seg button.on {
+  border-color: var(--accent);
+  color: var(--text);
+  font-weight: 600;
 }

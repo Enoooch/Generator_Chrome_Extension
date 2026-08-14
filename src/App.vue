@@ -1,6 +1,6 @@
 <script setup>
 import { computed, reactive, ref, watch, onMounted } from 'vue'
-import { DEFAULTS, MODES, PIN_PRESETS, generate, withDefaults, GenerateError } from './lib/modes.js'
+import { DEFAULTS, MODES, PIN_PRESETS, generate, withDefaults, GenerateError } from './lib/state.js'
 import { SEPARATORS, MIN_WORDS, MAX_WORDS, WORDLIST_SIZE } from './lib/passphrase.js'
 import { estimate, estimateFromString } from './lib/strength.js'
 import { loadOptions, saveOptions } from './lib/storage.js'
@@ -25,7 +25,7 @@ const TYPES = [
 ]
 
 const strength = computed(() =>
-  edited.value ? estimateFromString(password.value) : estimate(state)
+  edited.value ? estimateFromString(password.value) : estimate(state.password)
 )
 
 // 按字符类别着色。textarea 无法上色，所以下面用一层等宽镜像 <pre> 承载颜色。
@@ -84,7 +84,8 @@ async function copy(value = password.value) {
 
 /** 只重置当前模式的参数，不动其他模式，也不动已生成的密码 */
 function resetCurrentMode() {
-  Object.assign(state[state.mode], DEFAULTS[state.mode])
+  const mode = state.password.mode
+  Object.assign(state.password[mode], DEFAULTS.password[mode])
 }
 
 onMounted(async () => {
@@ -106,8 +107,8 @@ watch(state, () => {
       <button
         v-for="m in MODES"
         :key="m.key"
-        :class="{ on: state.mode === m.key }"
-        @click="state.mode = m.key"
+        :class="{ on: state.password.mode === m.key }"
+        @click="state.password.mode = m.key"
       >
         {{ m.label }}
       </button>
@@ -156,42 +157,42 @@ watch(state, () => {
         >{{ strength.exact ? '' : '≤' }}{{ strength.bits }} bits<template v-if="!strength.exact"> · 估算</template></span>
       </div>
 
-      <section v-if="state.mode === 'random'">
+      <section v-if="state.password.mode === 'random'">
         <label class="row">
           <span>长度</span>
-          <output>{{ state.random.length }}</output>
+          <output>{{ state.password.random.length }}</output>
         </label>
-        <input v-model.number="state.random.length" type="range" min="4" max="64" />
+        <input v-model.number="state.password.random.length" type="range" min="4" max="64" />
 
         <div class="types">
-          <label v-for="t in TYPES" :key="t.key" class="chip" :class="{ on: state.random[t.key] }">
-            <input v-model="state.random[t.key]" type="checkbox" />
+          <label v-for="t in TYPES" :key="t.key" class="chip" :class="{ on: state.password.random[t.key] }">
+            <input v-model="state.password.random[t.key]" type="checkbox" />
             <span>{{ t.label }}</span>
           </label>
         </div>
 
         <label class="row toggle">
-          <input v-model="state.random.excludeAmbiguous" type="checkbox" />
+          <input v-model="state.password.random.excludeAmbiguous" type="checkbox" />
           <span>排除易混淆字符 <em>O0oIl1|</em></span>
         </label>
 
         <label class="row toggle">
-          <input v-model="state.random.noRepeat" type="checkbox" />
+          <input v-model="state.password.random.noRepeat" type="checkbox" />
           <span>字符不重复</span>
         </label>
 
         <label class="row stack">
           <span class="dim">排除指定字符</span>
-          <input v-model="state.random.customExclude" type="text" placeholder="例如 &lt;&gt;&amp;" spellcheck="false" autocomplete="off" />
+          <input v-model="state.password.random.customExclude" type="text" placeholder="例如 &lt;&gt;&amp;" spellcheck="false" autocomplete="off" />
         </label>
       </section>
 
-      <section v-else-if="state.mode === 'phrase'">
+      <section v-else-if="state.password.mode === 'phrase'">
         <label class="row">
           <span>词数</span>
-          <output>{{ state.phrase.words }}</output>
+          <output>{{ state.password.phrase.words }}</output>
         </label>
-        <input v-model.number="state.phrase.words" type="range" :min="MIN_WORDS" :max="MAX_WORDS" />
+        <input v-model.number="state.password.phrase.words" type="range" :min="MIN_WORDS" :max="MAX_WORDS" />
 
         <label class="row">
           <span>分隔符</span>
@@ -200,19 +201,19 @@ watch(state, () => {
               v-for="s in SEPARATORS"
               :key="s.value"
               class="sep"
-              :class="{ on: state.phrase.separator === s.value }"
-              @click="state.phrase.separator = s.value"
+              :class="{ on: state.password.phrase.separator === s.value }"
+              @click="state.password.phrase.separator = s.value"
             >{{ s.label }}</button>
           </span>
         </label>
 
         <label class="row toggle">
-          <input v-model="state.phrase.capitalize" type="checkbox" />
+          <input v-model="state.password.phrase.capitalize" type="checkbox" />
           <span>首字母大写</span>
         </label>
 
         <label class="row toggle">
-          <input v-model="state.phrase.addNumber" type="checkbox" />
+          <input v-model="state.password.phrase.addNumber" type="checkbox" />
           <span>末尾追加一位数字</span>
         </label>
 
@@ -222,16 +223,16 @@ watch(state, () => {
       <section v-else>
         <label class="row">
           <span>位数</span>
-          <output>{{ state.pin.length }}</output>
+          <output>{{ state.password.pin.length }}</output>
         </label>
-        <input v-model.number="state.pin.length" type="range" min="3" max="12" />
+        <input v-model.number="state.password.pin.length" type="range" min="3" max="12" />
         <div class="presets">
           <button
             v-for="n in PIN_PRESETS"
             :key="n"
             class="sep"
-            :class="{ on: state.pin.length === n }"
-            @click="state.pin.length = n"
+            :class="{ on: state.password.pin.length === n }"
+            @click="state.password.pin.length = n"
           >{{ n }} 位</button>
         </div>
         <p class="hint">纯数字强度很低，仅适合有锁定次数限制的场景（手机、门禁）。</p>

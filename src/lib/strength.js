@@ -26,19 +26,21 @@ function pack(bits, extra = {}) {
 }
 
 /**
- * 已知生成参数时的**精确**熵值。
+ * 已知生成参数时的**精确**熵值。参数是密码工具那一组配置（{mode, random, phrase, pin}）。
  *
  * 因为密码由 CSPRNG 均匀抽样产生，log2(空间大小) 就是攻击者的真实猜测成本，
  * 不存在「看起来复杂但其实可猜」的问题。
+ *
+ * 用户名不走这里：它是公开的，熵不是它的目标，见 username.js 的 describeUsername()。
  */
-export function estimate(state) {
-  if (state.mode === 'phrase') {
-    return pack(passphraseBits(state.phrase), { exact: true })
+export function estimate(password) {
+  if (password.mode === 'phrase') {
+    return pack(passphraseBits(password.phrase), { exact: true })
   }
   const opts =
-    state.mode === 'pin'
-      ? { ...state.pin, lower: false, upper: false, symbol: false, digit: true }
-      : state.random
+    password.mode === 'pin'
+      ? { ...password.pin, lower: false, upper: false, symbol: false, digit: true }
+      : password.random
   const { all } = buildPools(opts)
   const bits = all.length > 1 ? (opts.length ?? 0) * Math.log2(all.length) : 0
   return pack(bits, { exact: true })

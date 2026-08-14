@@ -1,9 +1,10 @@
 // 只持久化「生成参数」，绝不持久化密码本身。
 // 非扩展环境（比如 vite dev 直接开页面）降级到 localStorage，方便调试。
 
-// v2 起结构从扁平改为 { mode, random, phrase, pin }。换 key 而不是写迁移逻辑：
-// 旧结构只存了几个生成参数，丢掉的代价就是回到默认值一次。
-const KEY = 'pwgen:options:v2'
+// 结构变更时换 key，而不是写迁移逻辑：存的只是几个生成参数，丢掉的代价就是回到默认值一次。
+//   v2  扁平结构 -> { mode, random, phrase, pin }
+//   v3  加入用户名工具 -> { tool, password: {...}, username: {...} }
+const KEY = 'pwgen:options:v3'
 
 const hasChrome = typeof chrome !== 'undefined' && chrome.storage?.local
 

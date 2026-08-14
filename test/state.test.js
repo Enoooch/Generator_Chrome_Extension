@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { WORDS } from '../src/lib/wordlist.js'
 import { generatePassphrase, passphraseBits } from '../src/lib/passphrase.js'
-import { DEFAULTS, generate, withDefaults, GenerateError } from '../src/lib/modes.js'
+import { DEFAULTS, generate, withDefaults, GenerateError } from '../src/lib/state.js'
 import { estimate, estimateFromString } from '../src/lib/strength.js'
 
 const REPEAT = 200
@@ -68,65 +68,101 @@ test('词组熵值与词库规模一致', () => {
 
 test('三种模式都能生成', () => {
   const s = withDefaults(null)
-  assert.equal(generate({ ...s, mode: 'random' }).length, 16)
-  assert.match(generate({ ...s, mode: 'pin' }), /^\d{6}$/)
-  assert.equal(generate({ ...s, mode: 'phrase' }).split('-').length, 4)
+  assert.equal(generate({ ...s, password: { ...s.password, mode: 'random' } }).length, 16)
+  assert.match(generate({ ...s, password: { ...s.password, mode: 'pin' } }), /^\d{6}$/)
+  assert.equal(generate({ ...s, password: { ...s.password, mode: 'phrase' } }).split('-').length, 4)
 })
 
 test('PIN 只含数字且长度可变', () => {
   for (const length of [3, 4, 6, 12]) {
     for (let i = 0; i < 50; i++) {
-      const pin = generate({ ...withDefaults(null), mode: 'pin', pin: { length } })
-      assert.match(pin, new RegExp(`^\\d{${length}}$`), pin)
+      const s = withDefaults(null)
+      s.password.mode = 'pin'
+      s.password.pin.length = length
+      assert.match(generate(s), new RegExp(`^\\d{${length}}$`), 'length=' + length)
     }
   }
 })
 
-test('未知模式抛 GenerateError', () => {
-  assert.throws(() => generate({ ...withDefaults(null), mode: 'nope' }), GenerateError)
+test('未知工具与未知模式都抛 GenerateError', () => {
+  assert.throws(() => generate({ ...withDefaults(null), tool: 'nope' }), GenerateError)
+  const s = withDefaults(null)
+  s.password.mode = 'nope'
+  assert.throws(() => generate(s), GenerateError)
 })
 
 // ---------- 存档合并 ----------
 
 test('withDefaults 补齐缺失字段', () => {
-  const s = withDefaults({ mode: 'pin', random: { length: 30 } })
-  assert.equal(s.mode, 'pin')
-  assert.equal(s.random.length, 30)
-  assert.equal(s.random.symbol, DEFAULTS.random.symbol)
-  assert.deepEqual(s.phrase, { ...DEFAULTS.phrase })
+  const s = withDefaults({ tool: 'username', password: { mode: 'pin', random: { length: 30 } } })
+  assert.equal(s.tool, 'username')
+  assert.equal(s.password.mode, 'pin')
+  assert.equal(s.password.random.length, 30)
+  assert.equal(s.password.random.symbol, DEFAULTS.password.random.symbol)
+  assert.deepEqual(s.password.phrase, { ...DEFAULTS.password.phrase })
+  assert.deepEqual(s.username, { ...DEFAULTS.username })
 })
 
-test('withDefaults 拒绝脏数据', () => {
+test('withDefaults 拒绝类型不符与未知字段', () => {
   const dirty = withDefaults({
-    mode: 'evil',
-    random: { length: '999', symbol: 'yes', bogus: 1 },
-    phrase: null,
-    pin: { length: NaN },
+    tool: 'evil',
+    password: {
+      mode: 'evil',
+      random: { length: '999', symbol: 'yes', bogus: 1 },
+      phrase: null,
+      pin: { length: NaN },
+    },
+    username: { style: 'evil', casing: 42, separator: '///', maxLength: 7 },
   })
-  assert.equal(dirty.mode, DEFAULTS.mode)
-  assert.equal(dirty.random.length, DEFAULTS.random.length, '字符串长度不该被接受')
-  assert.equal(dirty.random.symbol, DEFAULTS.random.symbol)
-  assert.ok(!('bogus' in dirty.random), '未知字段不该混入')
-  assert.equal(dirty.pin.length, DEFAULTS.pin.length, 'NaN 不该被接受')
+  assert.equal(dirty.tool, DEFAULTS.tool)
+  assert.equal(dirty.password.mode, DEFAULTS.password.mode)
+  assert.equal(dirty.password.random.length, DEFAULTS.password.random.length, '字符串长度不该被接受')
+  assert.equal(dirty.password.random.symbol, DEFAULTS.password.random.symbol)
+  assert.ok(!('bogus' in dirty.password.random), '未知字段不该混入')
+  assert.equal(dirty.password.pin.length, DEFAULTS.password.pin.length, 'NaN 不该被接受')
+  assert.equal(dirty.username.style, DEFAULTS.username.style, '枚举外的 style 不该被接受')
+  assert.equal(dirty.username.casing, DEFAULTS.username.casing)
+  assert.equal(dirty.username.separator, DEFAULTS.username.separator, '未知分隔符不该被接受')
+  assert.equal(dirty.username.maxLength, DEFAULTS.username.maxLength, '枚举外的上限不该被接受')
   // 合并结果必须可以直接喂给生成器
   assert.doesNotThrow(() => generate(dirty))
 })
 
+test('withDefaults 把越界数值挡在生成器之外', () => {
+  // typeof 检查放行的合法数字，但取值荒谬 —— 直接喂给生成器会让弹窗一开就是报错状态
+  const s = withDefaults({
+    password: {
+      random: { length: 1e9 },
+      phrase: { words: 0 },
+      pin: { length: -5 },
+    },
+    username: { length: 999, numberLength: 50 },
+  })
+  assert.equal(s.password.random.length, DEFAULTS.password.random.length)
+  assert.equal(s.password.phrase.words, DEFAULTS.password.phrase.words)
+  assert.equal(s.password.pin.length, DEFAULTS.password.pin.length)
+  assert.equal(s.username.length, DEFAULTS.username.length)
+  assert.equal(s.username.numberLength, DEFAULTS.username.numberLength)
+  assert.doesNotThrow(() => generate(s))
+})
+
 test('withDefaults 不会被调用方改坏默认值', () => {
   const s = withDefaults(null)
-  s.random.length = 99
-  assert.equal(DEFAULTS.random.length, 16, 'DEFAULTS 被写穿了')
+  s.password.random.length = 99
+  s.username.style = 'random'
+  assert.equal(DEFAULTS.password.random.length, 16, 'DEFAULTS 被写穿了')
+  assert.equal(DEFAULTS.username.style, 'word', 'DEFAULTS 被写穿了')
 })
 
 // ---------- 强度 ----------
 
 test('精确熵：随机与词组', () => {
   const s = withDefaults(null)
-  const rnd = estimate({ ...s, mode: 'random' })
+  const rnd = estimate({ ...s.password, mode: 'random' })
   assert.ok(rnd.exact)
   assert.equal(rnd.bits, Math.round(16 * Math.log2(26 + 26 + 10 + 27)))
 
-  const ph = estimate({ ...s, mode: 'phrase' })
+  const ph = estimate({ ...s.password, mode: 'phrase' })
   assert.ok(ph.exact)
   assert.equal(ph.bits, Math.round(4 * Math.log2(WORDS.length)))
 })
@@ -149,10 +185,10 @@ test('字符串估算对随机密码不低于其真实熵', () => {
   // 上界必须真的是上界：随机生成的密码，估算值不应低于生成时的精确熵
   const s = withDefaults(null)
   for (const length of [8, 12, 16, 24, 32]) {
-    s.random.length = length
-    const exact = estimate({ ...s, mode: 'random' }).bits
+    s.password.random.length = length
+    const exact = estimate({ ...s.password, mode: 'random' }).bits
     for (let i = 0; i < 30; i++) {
-      const pw = generate({ ...s, mode: 'random' })
+      const pw = generate({ ...s, password: { ...s.password, mode: 'random' } })
       const guess = estimateFromString(pw).bits
       assert.ok(guess >= exact, `len=${length} 估算 ${guess} < 精确 ${exact}：${pw}`)
     }
@@ -163,8 +199,8 @@ test('强度分级单调不降', () => {
   let last = -1
   for (const len of [4, 8, 12, 16, 24, 40, 64]) {
     const s = withDefaults(null)
-    s.random.length = len
-    const bits = estimate({ ...s, mode: 'random' }).bits
+    s.password.random.length = len
+    const bits = estimate({ ...s.password, mode: 'random' }).bits
     assert.ok(bits > last)
     last = bits
   }

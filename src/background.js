@@ -1,23 +1,27 @@
 // Service worker：只负责右键菜单。没有常驻逻辑，空闲时会被浏览器回收，
 // 所以事件监听必须在顶层同步注册，不能放进异步回调里。
 
-import { generate, withDefaults, GenerateError } from './lib/modes.js'
+import { generate, withDefaults, GenerateError } from './lib/state.js'
 import { loadOptions } from './lib/storage.js'
 
 const ROOT = 'pwgen-root'
+
+// 每一项都写死 tool + mode，不依赖弹窗当前停在哪个 tab —— 菜单点的是哪个就生成哪个。
+// 其余参数（长度、字符集、分隔符……）仍然沿用你在弹窗里存下的配置。
 const ITEMS = [
-  { id: 'pwgen-random', title: '随机密码', mode: 'random' },
-  { id: 'pwgen-phrase', title: '易记词组', mode: 'phrase' },
-  { id: 'pwgen-pin', title: 'PIN 数字', mode: 'pin' },
+  { id: 'pwgen-random', title: '随机密码', target: { tool: 'password', mode: 'random' } },
+  { id: 'pwgen-phrase', title: '易记词组', target: { tool: 'password', mode: 'phrase' } },
+  { id: 'pwgen-pin', title: 'PIN 数字', target: { tool: 'password', mode: 'pin' } },
+  { id: 'pwgen-username', title: '用户名', target: { tool: 'username' } },
 ]
-const MODE_BY_ID = Object.fromEntries(ITEMS.map((i) => [i.id, i.mode]))
+const TARGET_BY_ID = Object.fromEntries(ITEMS.map((i) => [i.id, i.target]))
 
 chrome.runtime.onInstalled.addListener(() => {
   // 先清空：重装/更新时重复 create 同一个 id 会报错
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
       id: ROOT,
-      title: '生成密码并填入',
+      title: '生成并填入',
       contexts: ['editable'], // 只在可输入元素上出现
     })
     for (const { id, title } of ITEMS) {
@@ -49,12 +53,17 @@ function fillFocusedField(value) {
 }
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  const mode = MODE_BY_ID[info.menuItemId]
-  if (!mode || !tab?.id) return
+  const target = TARGET_BY_ID[info.menuItemId]
+  if (!target || !tab?.id) return
 
   let value
   try {
-    value = generate({ ...withDefaults(await loadOptions()), mode })
+    const state = withDefaults(await loadOptions())
+    value = generate({
+      ...state,
+      tool: target.tool,
+      password: target.mode ? { ...state.password, mode: target.mode } : state.password,
+    })
   } catch (e) {
     // 存档里的参数组合不合法（比如随机模式把所有字符类型都关了），无声跳过；
     // 没有 notifications 权限，这里没法提示，用户打开 popup 就会看到报错原因。
